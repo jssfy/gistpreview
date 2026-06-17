@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gist Preview</title>
+  <link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css">
+  <link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f6f8fa;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+
+    /* ── 顶栏 ─────────────────────────────────────────── */
+    #topbar {
+      background: #24292f;
+      color: #e6edf3;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    #topbar .logo {
+      font-weight: 600;
+      font-size: 14px;
+      color: #e6edf3;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+
+    #gist-input {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #444c56;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 13px;
+      outline: none;
+      font-family: ui-monospace, monospace;
+    }
+    #gist-input:focus { border-color: #58a6ff; }
+    #gist-input::placeholder { color: #8b949e; }
+
+    #load-btn {
+      padding: 6px 14px;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    #load-btn:hover { background: #2ea043; }
+    #load-btn:disabled { background: #3d4450; cursor: not-allowed; }
+
+    /* ── 文件 Tab ─────────────────────────────────────── */
+    #tab-bar {
+      background: #fff;
+      border-bottom: 1px solid #d0d7de;
+      padding: 0 24px;
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 10px 16px;
+      border: none;
+      background: none;
+      color: #57606a;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: #24292f; }
+    .tab-btn.active {
+      color: #24292f;
+      border-bottom-color: #fd8c73;
+      font-weight: 600;
+    }
+
+    /* ── Gist 元信息 ──────────────────────────────────── */
+    #meta-bar {
+      background: #fff;
+      border-bottom: 1px solid #d0d7de;
+      padding: 10px 24px;
+      font-size: 12px;
+      color: #57606a;
+      display: none;
+    }
+    #meta-bar a { color: #0969da; text-decoration: none; }
+    #meta-bar a:hover { text-decoration: underline; }
+
+    /* ── 内容区 ────────────────────────────────────────── */
+    #main {
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+
+    .markdown-body {
+      background: #fff;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      padding: 32px 40px;
+    }
+
+    /* ── 状态消息 ─────────────────────────────────────── */
+    #status {
+      text-align: center;
+      padding: 80px 20px;
+      color: #57606a;
+    }
+
+    #status.error { color: #cf222e; }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #d0d7de;
+      border-top-color: #0969da;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 欢迎页 ────────────────────────────────────────── */
+    #welcome {
+      text-align: center;
+      padding: 80px 20px;
+      color: #57606a;
+    }
+    #welcome h2 { color: #24292f; margin-bottom: 8px; }
+    #welcome code {
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+    }
+
+    .html-frame {
+      width: 100%;
+      height: 600px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background: #fff;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div id="topbar">
+  <span class="logo">⧉ Gist Preview</span>
+  <input id="gist-input" type="text"
+    placeholder="输入 Gist ID 或完整 URL，如 812cfe8cea8f8b754df4ac4ed78b5263">
+  <button id="load-btn" onclick="loadFromInput()">预览</button>
+</div>
+
+<!-- 文件 Tab -->
+<div id="tab-bar" style="display:none"></div>
+
+<!-- Gist 元信息 -->
+<div id="meta-bar"></div>
+
+<!-- 主内容 -->
+<div id="main">
+  <div id="status" class="markdown-body">
+    <div id="welcome">
+      <h2>Gist Markdown Previewer</h2>
+      <p>在地址栏输入 <code>?{gist_id}</code> 或在顶部框中粘贴 Gist ID / URL</p>
+      <p>示例：<code>?812cfe8cea8f8b754df4ac4ed78b5263</code></p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+
+<script>
+// ── marked 配置（代码高亮）────────────────────────────────────
+// marked v5+ removed the `highlight` option; use marked.use() with a renderer instead.
+// All hljs calls are guarded with typeof checks so the page degrades gracefully
+// when highlight.js fails to load (e.g. CDN unreachable).
+function _hljsRender(text, lang) {
+  if (typeof hljs === 'undefined') return null;
+  try {
+    const language = (lang && hljs.getLanguage(lang)) ? lang : 'plaintext';
+    return { value: hljs.highlight(text, { language }).value, language };
+  } catch (_) { return null; }
+}
+
+marked.use({
+  gfm: true,
+  breaks: false,
+  renderer: {
+    code(token) {
+      // marked v5+ passes a token object; older versions pass (code, lang)
+      const text = typeof token === 'object' ? token.text : token;
+      const lang = typeof token === 'object' ? token.lang : arguments[1];
+      const result = _hljsRender(text, lang);
+      if (result) {
+        return `<pre><code class="hljs language-${result.language}">${result.value}</code></pre>`;
+      }
+      return false; // fall back to marked's default code renderer
+    }
+  }
+});
+
+// ── 工具函数 ─────────────────────────────────────────────────
+function extractGistId(raw) {
+  raw = raw.trim();
+  // 完整 URL：https://gist.github.com/user/abc123
+  const m = raw.match(/([0-9a-f]{20,})/i);
+  return m ? m[1] : null;
+}
+
+function setStatus(html, isError = false) {
+  const el = document.getElementById('status');
+  el.style.display = '';
+  el.className = 'markdown-body' + (isError ? ' error' : '');
+  el.innerHTML = html;
+}
+
+function setLoading() {
+  setStatus('<div class="spinner"></div><p>加载中…</p>');
+}
+
+// ── 渲染单个文件 ──────────────────────────────────────────────
+let currentFiles = {};
+
+function renderFile(file) {
+  const status = document.getElementById('status');
+  status.style.display = 'none';
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filename === file.filename);
+  });
+
+  const main = document.getElementById('main');
+  main.querySelectorAll('.markdown-body:not(#status), .html-frame').forEach(n => n.remove());
+
+  const lower = file.filename.toLowerCase();
+
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+    // HTML 文件：沙箱 iframe 渲染，高度自适应内容
+    const iframe = document.createElement('iframe');
+    iframe.className = 'html-frame';
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+    iframe.onload = () => {
+      try {
+        const h = iframe.contentDocument.body.scrollHeight;
+        iframe.style.height = Math.min(Math.max(h + 32, 300), window.innerHeight * 0.9) + 'px';
+      } catch (_) {}
+    };
+    main.appendChild(iframe);
+    iframe.srcdoc = file.content; // 赋值在 appendChild 之后触发 load 事件
+  } else if (lower.endsWith('.md') || lower.endsWith('.markdown') || file.type === 'text/markdown') {
+    const div = document.createElement('div');
+    div.className = 'markdown-body';
+    div.innerHTML = DOMPurify.sanitize(marked.parse(file.content));
+    main.appendChild(div);
+  } else {
+    // 其他源码文件：语法高亮
+    const lang = lower.split('.').pop();
+    const result = _hljsRender(file.content, lang) ||
+      (typeof hljs !== 'undefined' ? { value: hljs.highlightAuto(file.content).value, language: lang } : null);
+    const div = document.createElement('div');
+    div.className = 'markdown-body';
+    div.innerHTML = result
+      ? `<pre><code class="hljs language-${result.language}">${result.value}</code></pre>`
+      : `<pre><code>${escHtml(file.content)}</code></pre>`;
+    main.appendChild(div);
+  }
+}
+
+// ── 加载 Gist ─────────────────────────────────────────────────
+async function loadGist(gistId) {
+  if (!gistId) return;
+
+  document.getElementById('gist-input').value = gistId;
+  setLoading();
+  document.getElementById('tab-bar').style.display = 'none';
+  document.getElementById('meta-bar').style.display = 'none';
+
+  // 更新 URL（不刷新页面）
+  history.replaceState(null, '', `?${gistId}`);
+
+  try {
+    const resp = await fetch(`https://api.github.com/gists/${gistId}`);
+
+    if (!resp.ok) {
+      const limit = resp.headers.get('x-ratelimit-remaining');
+      if (resp.status === 403 && limit === '0') {
+        throw new Error('GitHub API 限额已用完（60 req/h），请稍后再试');
+      }
+      if (resp.status === 404) throw new Error('Gist 不存在或为私有');
+      throw new Error(`GitHub API 返回 ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    currentFiles = data.files;
+
+    // 元信息栏
+    const metaBar = document.getElementById('meta-bar');
+    metaBar.style.display = 'block';
+    const gistUrl = `https://gist.github.com/${data.owner?.login}/${gistId}`;
+    metaBar.innerHTML = `
+      <a href="${gistUrl}" target="_blank">⧉ 查看原始 Gist</a>
+      ${data.description ? ` &mdash; ${escHtml(data.description)}` : ''}
+      &nbsp;·&nbsp; ${data.owner?.login || '匿名'}
+      &nbsp;·&nbsp; ${Object.keys(data.files).length} 个文件
+    `;
+
+    const files = Object.values(data.files);
+
+    // 文件 Tab（多文件时显示）
+    const tabBar = document.getElementById('tab-bar');
+    tabBar.innerHTML = '';
+    if (files.length > 1) {
+      tabBar.style.display = 'flex';
+      files.forEach(file => {
+        const btn = document.createElement('button');
+        btn.className = 'tab-btn';
+        btn.textContent = file.filename;
+        btn.dataset.filename = file.filename;
+        btn.onclick = () => renderFile(file);
+        tabBar.appendChild(btn);
+      });
+    }
+
+    // 默认渲染：优先 .md 文件，否则第一个
+    const target = files.find(f => /\.(md|markdown)$/i.test(f.filename)) || files[0];
+    renderFile(target);
+
+    document.title = data.description || target.filename || 'Gist Preview';
+
+  } catch (e) {
+    setStatus(`<p>⚠️ ${escHtml(e.message)}</p>`, true);
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── 顶栏输入框 ────────────────────────────────────────────────
+function loadFromInput() {
+  const raw = document.getElementById('gist-input').value;
+  const id = extractGistId(raw);
+  if (!id) {
+    alert('无法识别 Gist ID，请输入 ID 或完整 Gist URL');
+    return;
+  }
+  loadGist(id);
+}
+
+document.getElementById('gist-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadFromInput();
+});
+
+// ── 初始化：从 URL 解析 ───────────────────────────────────────
+(function init() {
+  // 支持 ?{id} 和 #{id} 两种形式
+  const fromSearch = location.search.slice(1);
+  const fromHash   = location.hash.replace(/^#[/_]?/, '');
+  const raw = fromSearch || fromHash;
+  const id = extractGistId(raw);
+  if (id) loadGist(id);
+})();
+</script>
+</body>
+</html>
